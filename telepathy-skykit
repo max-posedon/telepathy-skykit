@@ -8,4 +8,3 @@ from skykit.connection_manager import SkykitConnectionManager
 DBusGMainLoop(set_as_default=True)
 SkykitConnectionManager()
 MainLoop().run()
-
