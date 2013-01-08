@@ -1,0 +1,11 @@
+#!/usr/bin/python -u
+
+from gobject import MainLoop
+from dbus.mainloop.glib import DBusGMainLoop
+
+from skykit.connection_manager import SkykitConnectionManager
+
+DBusGMainLoop(set_as_default=True)
+SkykitConnectionManager()
+MainLoop().run()
+
