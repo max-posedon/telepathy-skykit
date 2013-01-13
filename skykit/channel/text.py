@@ -1,7 +1,8 @@
-from dbus import Array, Dictionary, String, UInt32, UInt64
 from time import time
 from uuid import uuid4
+
 import gobject
+from dbus.types import Array, Dictionary, String, UInt32, UInt64
 
 from telepathy.constants import CHANNEL_TEXT_MESSAGE_TYPE_NORMAL
 from telepathy.server import ChannelTypeText, ChannelInterfaceMessages
@@ -47,7 +48,8 @@ class SkykitTextChannel(ChannelTypeText, ChannelInterfaceMessages):
 
     def OnMessage(self, message):
         print "F [%s]" % self._skype_conversation.identity, message.author, message.body_xml
-        self._message_received(message.body_xml)
+        if message.author != self._conn._skype_account.skypename:
+            self._message_received(message.body_xml)
 
     def _message_received(self, msg):
         self.__message_received_id += 1

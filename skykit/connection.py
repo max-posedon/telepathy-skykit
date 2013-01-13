@@ -1,6 +1,6 @@
 from time import sleep
 import gobject
-from dbus.types import Dictionary
+from dbus.types import Array, Dictionary, String
 import sys
 import weakref
 
@@ -16,16 +16,18 @@ from telepathy.constants import (
 )
 from telepathy.interfaces import (
     CONNECTION,
+    CONNECTION_INTERFACE_CONTACT_GROUPS,
     CONNECTION_INTERFACE_CONTACT_LIST,
 )
 from telepathy.server import (
     Connection,
     ConnectionInterfaceRequests,
     ConnectionInterfaceContacts,
+    ConnectionInterfaceContactGroups,
     ConnectionInterfaceContactList,
 )
 
-from skykit import PROGRAM, PROTOCOL, SKYPEKITROOT, SKYPEKITKEY
+from skykit import PROGRAM, PROTOCOL, SKYPEKITROOT, SKYPEKITKEY, GROUP
 sys.path.append(SKYPEKITROOT + '/ipc/python');
 sys.path.append(SKYPEKITROOT + '/interfaces/skype/python');
 
@@ -39,6 +41,7 @@ __all__ = (
 
 
 class SkykitConnection(Connection,
+    ConnectionInterfaceContactGroups,
     ConnectionInterfaceContactList,
     ConnectionInterfaceContacts,
     ConnectionInterfaceRequests,
@@ -56,6 +59,7 @@ class SkykitConnection(Connection,
             parameters['password'].encode('utf-8'),
         )
         Connection.__init__(self, PROTOCOL, account, PROGRAM, protocol)
+        ConnectionInterfaceContactGroups.__init__(self)
         ConnectionInterfaceContactList.__init__(self)
         ConnectionInterfaceContacts.__init__(self)
         ConnectionInterfaceRequests.__init__(self)
@@ -88,6 +92,8 @@ class SkykitConnection(Connection,
             self._sleep()
 
     def _connected(self):
+        self._groups = [GROUP]
+
         self.StatusChanged(CONNECTION_STATUS_CONNECTED, CONNECTION_STATUS_REASON_REQUESTED)
         self.ContactListStateChanged(CONTACT_LIST_STATE_SUCCESS)
 
@@ -111,6 +117,8 @@ class SkykitConnection(Connection,
         print "B", property_name
 
     def _disconnected(self):
+        self._groups = []
+
         self.StatusChanged(CONNECTION_STATUS_DISCONNECTED, self.__disconnect_reason)
         self._manager.disconnected(self)
 
@@ -127,6 +135,7 @@ class SkykitConnection(Connection,
             ret[int(handle)][CONNECTION + '/contact-id'] = contact
             ret[int(handle)][CONNECTION_INTERFACE_CONTACT_LIST + '/subscribe'] = SUBSCRIPTION_STATE_YES
             ret[int(handle)][CONNECTION_INTERFACE_CONTACT_LIST + '/publish'] = SUBSCRIPTION_STATE_YES
+            ret[int(handle)][CONNECTION_INTERFACE_CONTACT_GROUPS + '/groups'] = Array([String(GROUP)], signature='s')
         return ret
 
     def OnMessage(self, message, changes_inbox_timestamp, supersedes_history_message, conversation):
