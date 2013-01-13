@@ -37,8 +37,6 @@ __all__ = (
     'SkykitConnection',
 )
 
-MySkype = Skype.GetSkype(SKYPEKITKEY)
-MySkype.Start()
 
 class SkykitConnection(Connection,
     ConnectionInterfaceContactList,
@@ -65,16 +63,19 @@ class SkykitConnection(Connection,
         self_handle = self.ensure_handle(HANDLE_TYPE_CONTACT, self._account[0])
         self.set_self_handle(self_handle)
 
-        self._skype_account = MySkype.GetAccount(self._account[0].decode('utf-8'))
+        self._skype = Skype.GetSkype(SKYPEKITKEY)
+        self._skype.Start()
+        self._skype_account = self._skype.GetAccount(self._account[0].decode('utf-8'))
         Skype.Account.OnPropertyChange = self.OnPropertyChange
         Skype.Contact.OnPropertyChange = self.ContactOnPropertyChange
+        Skype.Skype.OnMessage = self.OnMessage
 
         self.__disconnect_reason = CONNECTION_STATUS_REASON_NONE_SPECIFIED
-        self._sleep()
 
     def _sleep(self):
-        sleep(0.1)
-        gobject.timeout_add(100, self._sleep)
+        if self._status != CONNECTION_STATUS_DISCONNECTED:
+            sleep(0.1)
+            gobject.timeout_add(100, self._sleep)
 
     def handle(self, handle_type, handle_id):
         self.check_handle(handle_type, handle_id)
@@ -84,10 +85,14 @@ class SkykitConnection(Connection,
         if self._status == CONNECTION_STATUS_DISCONNECTED:
             self._skype_account.LoginWithPassword(self._account[1].decode('utf-8'), False, False)
             self.StatusChanged(CONNECTION_STATUS_CONNECTING, CONNECTION_STATUS_REASON_REQUESTED)
+            self._sleep()
 
     def _connected(self):
         self.StatusChanged(CONNECTION_STATUS_CONNECTED, CONNECTION_STATUS_REASON_REQUESTED)
         self.ContactListStateChanged(CONTACT_LIST_STATE_SUCCESS)
+
+        convList = self._skype.GetConversationList('ALL_CONVERSATIONS')
+        print map(lambda c: c.identity, convList)
 
     def Disconnect(self):
         self.__disconnect_reason = CONNECTION_STATUS_REASON_REQUESTED
@@ -112,7 +117,7 @@ class SkykitConnection(Connection,
     def GetContactListAttributes(self, interfaces, hold):
         ret = Dictionary(signature='ua{sv}')
 
-        skypeContactGroup = MySkype.GetHardwiredContactGroup('ALL_KNOWN_CONTACTS')
+        skypeContactGroup = self._skype.GetHardwiredContactGroup('ALL_KNOWN_CONTACTS')
         skypeContacts = skypeContactGroup.GetContacts()
         CONTACTS = map(lambda c: c.GetIdentity(), skypeContacts)
 
@@ -123,3 +128,6 @@ class SkykitConnection(Connection,
             ret[int(handle)][CONNECTION_INTERFACE_CONTACT_LIST + '/subscribe'] = SUBSCRIPTION_STATE_YES
             ret[int(handle)][CONNECTION_INTERFACE_CONTACT_LIST + '/publish'] = SUBSCRIPTION_STATE_YES
         return ret
+
+    def OnMessage(self, message, changes_inbox_timestamp, supersedes_history_message, conversation):
+        print "C [%s]" % conversation.identity, message.author, message.body_xml
