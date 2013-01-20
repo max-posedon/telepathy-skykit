@@ -1,10 +1,12 @@
 from time import sleep
 import gobject
-from dbus.types import Array, Dictionary, String
+from dbus.types import Array, Dictionary, String, Struct
 import sys
 import weakref
 
 from telepathy.constants import (
+    CONNECTION_PRESENCE_TYPE_AVAILABLE,
+    CONNECTION_PRESENCE_STATUS_AVAILABLE,
     CONNECTION_STATUS_CONNECTED,
     CONNECTION_STATUS_CONNECTING,
     CONNECTION_STATUS_DISCONNECTED,
@@ -15,16 +17,22 @@ from telepathy.constants import (
     SUBSCRIPTION_STATE_YES,
 )
 from telepathy.interfaces import (
+    CHANNEL,
+    CHANNEL_TYPE_TEXT,
     CONNECTION,
+    CONNECTION_INTERFACE_ALIASING,
     CONNECTION_INTERFACE_CONTACT_GROUPS,
     CONNECTION_INTERFACE_CONTACT_LIST,
+    CONNECTION_INTERFACE_SIMPLE_PRESENCE,
 )
 from telepathy.server import (
     Connection,
-    ConnectionInterfaceRequests,
+    ConnectionInterfaceAliasing,
     ConnectionInterfaceContacts,
     ConnectionInterfaceContactGroups,
     ConnectionInterfaceContactList,
+    ConnectionInterfaceRequests,
+    ConnectionInterfaceSimplePresence,
 )
 
 from skykit import PROGRAM, PROTOCOL, SKYPEKITROOT, SKYPEKITKEY, GROUP
@@ -41,10 +49,12 @@ __all__ = (
 
 
 class SkykitConnection(Connection,
+    ConnectionInterfaceAliasing,
     ConnectionInterfaceContactGroups,
     ConnectionInterfaceContactList,
     ConnectionInterfaceContacts,
     ConnectionInterfaceRequests,
+    ConnectionInterfaceSimplePresence,
     ):
 
     def __init__(self, protocol, manager, parameters):
@@ -52,6 +62,7 @@ class SkykitConnection(Connection,
         self._manager = weakref.proxy(manager)
 
         account = unicode(parameters['account'])
+        self._statuses = protocol._statuses
         self._channel_manager = SkykitChannelManager(self, protocol)
 
         self._account = (
@@ -59,10 +70,12 @@ class SkykitConnection(Connection,
             parameters['password'].encode('utf-8'),
         )
         Connection.__init__(self, PROTOCOL, account, PROGRAM, protocol)
+        ConnectionInterfaceAliasing.__init__(self)
         ConnectionInterfaceContactGroups.__init__(self)
         ConnectionInterfaceContactList.__init__(self)
         ConnectionInterfaceContacts.__init__(self)
         ConnectionInterfaceRequests.__init__(self)
+        ConnectionInterfaceSimplePresence.__init__(self)
 
         self_handle = self.ensure_handle(HANDLE_TYPE_CONTACT, self._account[0])
         self.set_self_handle(self_handle)
@@ -72,6 +85,7 @@ class SkykitConnection(Connection,
         self._skype_account = self._skype.GetAccount(self._account[0].decode('utf-8'))
         Skype.Account.OnPropertyChange = self.OnPropertyChange
         Skype.Contact.OnPropertyChange = self.ContactOnPropertyChange
+        Skype.Skype.OnConversationListChange = self.OnConversationListChange
         Skype.Skype.OnMessage = self.OnMessage
 
         self.__disconnect_reason = CONNECTION_STATUS_REASON_NONE_SPECIFIED
@@ -97,7 +111,7 @@ class SkykitConnection(Connection,
         self.StatusChanged(CONNECTION_STATUS_CONNECTED, CONNECTION_STATUS_REASON_REQUESTED)
         self.ContactListStateChanged(CONTACT_LIST_STATE_SUCCESS)
 
-        convList = self._skype.GetConversationList('ALL_CONVERSATIONS')
+        convList = self._skype.GetConversationList('INBOX_CONVERSATIONS')
         print map(lambda c: c.identity, convList)
 
     def Disconnect(self):
@@ -116,6 +130,9 @@ class SkykitConnection(Connection,
     def ContactOnPropertyChange(self, property_name):
         print "B", property_name
 
+    def OnConversationListChange(self, conversation, type_, added):
+        print "H", conversation.identity, type_, added
+
     def _disconnected(self):
         self._groups = []
 
@@ -133,10 +150,45 @@ class SkykitConnection(Connection,
             handle = self.ensure_handle(HANDLE_TYPE_CONTACT, contact)
             ret[int(handle)] = Dictionary(signature='sv')
             ret[int(handle)][CONNECTION + '/contact-id'] = contact
+            ret[int(handle)][CONNECTION_INTERFACE_ALIASING + '/alias'] = contact
             ret[int(handle)][CONNECTION_INTERFACE_CONTACT_LIST + '/subscribe'] = SUBSCRIPTION_STATE_YES
             ret[int(handle)][CONNECTION_INTERFACE_CONTACT_LIST + '/publish'] = SUBSCRIPTION_STATE_YES
             ret[int(handle)][CONNECTION_INTERFACE_CONTACT_GROUPS + '/groups'] = Array([String(GROUP)], signature='s')
+            ret[int(handle)][CONNECTION_INTERFACE_SIMPLE_PRESENCE + '/presence'] = Struct(
+                (CONNECTION_PRESENCE_TYPE_AVAILABLE, CONNECTION_PRESENCE_STATUS_AVAILABLE, "avail"),
+                signature='uss',
+            )
         return ret
 
     def OnMessage(self, message, changes_inbox_timestamp, supersedes_history_message, conversation):
         print "C [%s]" % conversation.identity, message.author, message.body_xml
+        channel = self._start_conversation(conversation)
+        gobject.timeout_add(100, channel.OnMessage, message)
+        print "."
+
+    def _start_conversation(self, conversation):
+        handle = self.ensure_handle(HANDLE_TYPE_CONTACT, conversation.identity)
+        props = {
+            CHANNEL + '.ChannelType': CHANNEL_TYPE_TEXT,
+            CHANNEL + '.TargetHandle': handle.get_id(),
+            CHANNEL + '.TargetHandleType': HANDLE_TYPE_CONTACT,
+            CHANNEL + '.Requested': False,
+        }
+        return self._channel_manager.channel_for_props(props, signal=True)
+
+    def GetPresences(self, contacts):
+        presences = Dictionary(signature='u(uss)')
+        for handle_id in contacts:
+            handle = self.handle(HANDLE_TYPE_CONTACT, handle_id)
+            presences[handle] = Struct(
+                (CONNECTION_PRESENCE_TYPE_AVAILABLE, CONNECTION_PRESENCE_STATUS_AVAILABLE, "avail"),
+                signature='uss',
+            )
+        return presences
+
+    def GetAliases(self, contacts):
+        aliases = Dictionary(signature='us')
+        for handle_id in contacts:
+            handle = self.handle(HANDLE_TYPE_CONTACT, handle_id)
+            aliases[handle_id] = String(handle.name)
+        return aliases
