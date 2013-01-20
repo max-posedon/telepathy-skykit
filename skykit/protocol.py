@@ -11,15 +11,20 @@ from telepathy.interfaces import (
     CHANNEL,
     CHANNEL_TYPE_TEXT,
     CONNECTION_INTERFACE_ALIASING,
+    CONNECTION_INTERFACE_AVATARS,
     CONNECTION_INTERFACE_CONTACT_GROUPS,
     CONNECTION_INTERFACE_CONTACT_LIST,
     CONNECTION_INTERFACE_CONTACTS,
     CONNECTION_INTERFACE_REQUESTS,
     CONNECTION_INTERFACE_SIMPLE_PRESENCE,
 )
-from telepathy.server import Protocol, ProtocolInterfacePresence
+from telepathy.server import (
+    Protocol,
+    ProtocolInterfaceAvatars,
+    ProtocolInterfacePresence,
+)
 
-from skykit import PROTOCOL
+from skykit import PROTOCOL, AVATAR_MIME
 from skykit.connection import SkykitConnection
 
 
@@ -28,7 +33,7 @@ __all__ = (
 )
 
 
-class SkykitProtocol(Protocol, ProtocolInterfacePresence):
+class SkykitProtocol(Protocol, ProtocolInterfaceAvatars, ProtocolInterfacePresence):
     
     _proto = PROTOCOL
     _english_name = PROTOCOL.capitalize()
@@ -59,6 +64,7 @@ class SkykitProtocol(Protocol, ProtocolInterfacePresence):
 
     _supported_interfaces = [
         CONNECTION_INTERFACE_ALIASING,
+        CONNECTION_INTERFACE_AVATARS,
         CONNECTION_INTERFACE_CONTACT_GROUPS,
         CONNECTION_INTERFACE_CONTACT_LIST,
         CONNECTION_INTERFACE_CONTACTS,
@@ -79,8 +85,11 @@ class SkykitProtocol(Protocol, ProtocolInterfacePresence):
         ),
     }
 
+    _supported_avatar_mime_types = [AVATAR_MIME]
+
     def __init__(self, connection_manager):
         Protocol.__init__(self, connection_manager, PROTOCOL)
+        ProtocolInterfaceAvatars.__init__(self)
         ProtocolInterfacePresence.__init__(self)
 
     def create_connection(self, connection_manager, parameters):

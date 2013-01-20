@@ -1,6 +1,6 @@
 from time import sleep
 import gobject
-from dbus.types import Array, Dictionary, String, Struct
+from dbus.types import Array, Dictionary, String, Struct, UInt32
 import sys
 import weakref
 
@@ -21,6 +21,7 @@ from telepathy.interfaces import (
     CHANNEL_TYPE_TEXT,
     CONNECTION,
     CONNECTION_INTERFACE_ALIASING,
+    CONNECTION_INTERFACE_AVATARS,
     CONNECTION_INTERFACE_CONTACT_GROUPS,
     CONNECTION_INTERFACE_CONTACT_LIST,
     CONNECTION_INTERFACE_SIMPLE_PRESENCE,
@@ -28,6 +29,7 @@ from telepathy.interfaces import (
 from telepathy.server import (
     Connection,
     ConnectionInterfaceAliasing,
+    ConnectionInterfaceAvatars,
     ConnectionInterfaceContacts,
     ConnectionInterfaceContactGroups,
     ConnectionInterfaceContactList,
@@ -35,7 +37,7 @@ from telepathy.server import (
     ConnectionInterfaceSimplePresence,
 )
 
-from skykit import PROGRAM, PROTOCOL, SKYPEKITROOT, SKYPEKITKEY, GROUP
+from skykit import PROGRAM, PROTOCOL, SKYPEKITROOT, SKYPEKITKEY, GROUP, AVATAR_MIME
 sys.path.append(SKYPEKITROOT + '/ipc/python');
 sys.path.append(SKYPEKITROOT + '/interfaces/skype/python');
 
@@ -50,6 +52,7 @@ __all__ = (
 
 class SkykitConnection(Connection,
     ConnectionInterfaceAliasing,
+    ConnectionInterfaceAvatars,
     ConnectionInterfaceContactGroups,
     ConnectionInterfaceContactList,
     ConnectionInterfaceContacts,
@@ -71,6 +74,7 @@ class SkykitConnection(Connection,
         )
         Connection.__init__(self, PROTOCOL, account, PROGRAM, protocol)
         ConnectionInterfaceAliasing.__init__(self)
+        ConnectionInterfaceAvatars.__init__(self)
         ConnectionInterfaceContactGroups.__init__(self)
         ConnectionInterfaceContactList.__init__(self)
         ConnectionInterfaceContacts.__init__(self)
@@ -150,6 +154,7 @@ class SkykitConnection(Connection,
             handle = self.ensure_handle(HANDLE_TYPE_CONTACT, contact)
             ret[int(handle)] = Dictionary(signature='sv')
             ret[int(handle)][CONNECTION + '/contact-id'] = contact
+            ret[int(handle)][CONNECTION_INTERFACE_AVATARS + '/token'] = contact
             ret[int(handle)][CONNECTION_INTERFACE_ALIASING + '/alias'] = contact
             ret[int(handle)][CONNECTION_INTERFACE_CONTACT_LIST + '/subscribe'] = SUBSCRIPTION_STATE_YES
             ret[int(handle)][CONNECTION_INTERFACE_CONTACT_LIST + '/publish'] = SUBSCRIPTION_STATE_YES
@@ -192,3 +197,21 @@ class SkykitConnection(Connection,
             handle = self.handle(HANDLE_TYPE_CONTACT, handle_id)
             aliases[handle_id] = String(handle.name)
         return aliases
+
+    def GetKnownAvatarTokens(self, contacts):
+        tokens = Dictionary(signature='us')
+        for handle_id in contacts:
+            handle = self.handle(HANDLE_TYPE_CONTACT, handle_id)
+            tokens[handle_id] = String(handle.name)
+        return tokens
+
+    def RequestAvatars(self, contacts):
+        for handle_id in contacts:
+            gobject.timeout_add(0, self._avatar_retrieved, handle_id)
+
+    def _avatar_retrieved(self, handle_id):
+        handle = self.handle(HANDLE_TYPE_CONTACT, handle_id)
+        skype_contact = self._skype.GetContact(handle.name)
+        present, avatar = skype_contact.GetAvatar()
+        if present:
+            self.AvatarRetrieved(UInt32(handle_id), String(handle.name), avatar, AVATAR_MIME)
