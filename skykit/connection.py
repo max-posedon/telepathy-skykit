@@ -5,8 +5,8 @@ import sys
 import weakref
 
 from telepathy.constants import (
-    CONNECTION_PRESENCE_TYPE_AVAILABLE,
-    CONNECTION_PRESENCE_STATUS_AVAILABLE,
+    CONNECTION_PRESENCE_TYPE_UNSET,
+    CONNECTION_PRESENCE_STATUS_UNKNOWN,
     CONNECTION_STATUS_CONNECTED,
     CONNECTION_STATUS_CONNECTING,
     CONNECTION_STATUS_DISCONNECTED,
@@ -60,6 +60,8 @@ class SkykitConnection(Connection,
     ConnectionInterfaceSimplePresence,
     ):
 
+    _download_at_connection = False
+
     def __init__(self, protocol, manager, parameters):
         protocol.check_parameters(parameters)
         self._manager = weakref.proxy(manager)
@@ -91,6 +93,8 @@ class SkykitConnection(Connection,
         Skype.Contact.OnPropertyChange = self.ContactOnPropertyChange
         Skype.Skype.OnConversationListChange = self.OnConversationListChange
         Skype.Skype.OnMessage = self.OnMessage
+        Skype.Skype.OnContactOnlineAppearance = self.OnContactOnlineAppearance
+        Skype.Skype.OnContactGoneOffline = self.OnContactGoneOffline
 
         self.__disconnect_reason = CONNECTION_STATUS_REASON_NONE_SPECIFIED
 
@@ -110,13 +114,11 @@ class SkykitConnection(Connection,
             self._sleep()
 
     def _connected(self):
-        self._groups = [GROUP]
-
         self.StatusChanged(CONNECTION_STATUS_CONNECTED, CONNECTION_STATUS_REASON_REQUESTED)
-        self.ContactListStateChanged(CONTACT_LIST_STATE_SUCCESS)
 
-        convList = self._skype.GetConversationList('INBOX_CONVERSATIONS')
-        print map(lambda c: c.identity, convList)
+    def _contact_list_got(self):
+        self._groups = [GROUP]
+        self.ContactListStateChanged(CONTACT_LIST_STATE_SUCCESS)
 
     def Disconnect(self):
         self.__disconnect_reason = CONNECTION_STATUS_REASON_REQUESTED
@@ -127,15 +129,31 @@ class SkykitConnection(Connection,
         if property_name == 'status':
             print ".", self._skype_account.status
             if self._skype_account.status == 'LOGGED_IN':
-                self._connected()
+                gobject.timeout_add(0, self._connected)
             if self._skype_account.status == 'LOGGED_OUT':
-                self._disconnected()
+                gobject.timeout_add(0, self._disconnected)
+        elif property_name == 'cblsyncstatus':
+            print ".", self._skype_account.cblsyncstatus
+            if self._skype_account.cblsyncstatus == 'CBL_IN_SYNC':
+                gobject.timeout_add(10000, self._contact_list_got)
+        elif property_name == 'nrof_authed_buddies':
+            print ".", self._skype_account.nrof_authed_buddies
+        elif property_name == 'commitstatus':
+            print ".", self._skype_account.commitstatus
+        elif property_name == 'nr_of_other_instances':
+            print ".", self._skype_account.nr_of_other_instances
 
     def ContactOnPropertyChange(self, property_name):
         print "B", property_name
 
     def OnConversationListChange(self, conversation, type_, added):
         print "H", conversation.identity, type_, added
+
+    def OnContactOnlineAppearance(self, skype_contact):
+        print "Q[in]", skype_contact.GetIdentity(), skype_contact.availability, skype_contact.mood_text
+
+    def OnContactGoneOffline(self, contact):
+        print "Q[out]", skype_contact.GetIdentity(), skype_contact.availability, skype_contact.mood_text
 
     def _disconnected(self):
         self._groups = []
@@ -148,19 +166,23 @@ class SkykitConnection(Connection,
 
         skypeContactGroup = self._skype.GetHardwiredContactGroup('ALL_KNOWN_CONTACTS')
         skypeContacts = skypeContactGroup.GetContacts()
-        CONTACTS = map(lambda c: c.GetIdentity(), skypeContacts)
+        print 'P', map(lambda c: [c.GetIdentity(), c.availability], skypeContacts)
 
-        for contact in CONTACTS:
-            handle = self.ensure_handle(HANDLE_TYPE_CONTACT, contact)
+        for skype_contact in skypeContacts:
+            handle = self.ensure_handle(HANDLE_TYPE_CONTACT, skype_contact.GetIdentity())
             ret[int(handle)] = Dictionary(signature='sv')
-            ret[int(handle)][CONNECTION + '/contact-id'] = contact
-            ret[int(handle)][CONNECTION_INTERFACE_AVATARS + '/token'] = contact
-            ret[int(handle)][CONNECTION_INTERFACE_ALIASING + '/alias'] = contact
+            ret[int(handle)][CONNECTION + '/contact-id'] = handle.name
+            ret[int(handle)][CONNECTION_INTERFACE_AVATARS + '/token'] = handle.name
+            ret[int(handle)][CONNECTION_INTERFACE_ALIASING + '/alias'] = skype_contact.displayname
             ret[int(handle)][CONNECTION_INTERFACE_CONTACT_LIST + '/subscribe'] = SUBSCRIPTION_STATE_YES
             ret[int(handle)][CONNECTION_INTERFACE_CONTACT_LIST + '/publish'] = SUBSCRIPTION_STATE_YES
             ret[int(handle)][CONNECTION_INTERFACE_CONTACT_GROUPS + '/groups'] = Array([String(GROUP)], signature='s')
             ret[int(handle)][CONNECTION_INTERFACE_SIMPLE_PRESENCE + '/presence'] = Struct(
-                (CONNECTION_PRESENCE_TYPE_AVAILABLE, CONNECTION_PRESENCE_STATUS_AVAILABLE, "avail"),
+                (
+                    self._protocol._to_telepathy_type.get(skype_contact.availability, CONNECTION_PRESENCE_TYPE_UNSET),
+                    self._protocol._to_telepathy.get(skype_contact.availability, CONNECTION_PRESENCE_STATUS_UNKNOWN),
+                    skype_contact.mood_text,
+                ),
                 signature='uss',
             )
         return ret
@@ -185,10 +207,17 @@ class SkykitConnection(Connection,
         presences = Dictionary(signature='u(uss)')
         for handle_id in contacts:
             handle = self.handle(HANDLE_TYPE_CONTACT, handle_id)
+            skype_contact = self._skype.GetContact(handle.name)
             presences[handle] = Struct(
-                (CONNECTION_PRESENCE_TYPE_AVAILABLE, CONNECTION_PRESENCE_STATUS_AVAILABLE, "avail"),
+                (
+                    self._protocol._to_telepathy_type.get(skype_contact.availability, CONNECTION_PRESENCE_TYPE_UNSET),
+                    self._protocol._to_telepathy.get(skype_contact.availability, CONNECTION_PRESENCE_STATUS_UNKNOWN),
+                    skype_contact.mood_text,
+                ),
                 signature='uss',
             )
+
+
         return presences
 
     def GetAliases(self, contacts):
