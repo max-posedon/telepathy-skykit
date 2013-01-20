@@ -2,7 +2,7 @@ import gobject
 from dbus.types import Array, Dictionary, String, UInt32, UInt64
 from time import time
 
-from telepathy.constants import CHANNEL_TEXT_MESSAGE_TYPE_NORMAL
+from telepathy.constants import CHANNEL_TEXT_MESSAGE_TYPE_NORMAL, HANDLE_TYPE_CONTACT
 from telepathy.server import ChannelTypeText, ChannelInterfaceMessages
 
 
@@ -52,10 +52,12 @@ class SkykitTextChannel(ChannelTypeText, ChannelInterfaceMessages):
 
     def _message_received(self, skype_message):
         self.__message_received_id += 1
+        sender = self._conn.ensure_handle(HANDLE_TYPE_CONTACT, skype_message.author)
         header = Dictionary({
             'pending-message-id': UInt32(self.__message_received_id),
             'message-received': UInt64(time()), #UInt64(skype_message.timestamp),
             'message-type': UInt32(CHANNEL_TEXT_MESSAGE_TYPE_NORMAL),
+            'message-sender': UInt32(sender),
             'sender-nickname': String(skype_message.author),
             }, signature='sv')
         body = Dictionary({
