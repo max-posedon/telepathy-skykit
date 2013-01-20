@@ -152,7 +152,7 @@ class SkykitConnection(Connection,
     def OnContactOnlineAppearance(self, skype_contact):
         print "Q[in]", skype_contact.GetIdentity(), skype_contact.availability, skype_contact.mood_text
 
-    def OnContactGoneOffline(self, contact):
+    def OnContactGoneOffline(self, skype_contact):
         print "Q[out]", skype_contact.GetIdentity(), skype_contact.availability, skype_contact.mood_text
 
     def _disconnected(self):
