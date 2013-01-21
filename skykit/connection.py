@@ -12,6 +12,7 @@ from telepathy.constants import (
     CONNECTION_STATUS_DISCONNECTED,
     CONNECTION_STATUS_REASON_REQUESTED,
     CONNECTION_STATUS_REASON_NONE_SPECIFIED,
+    CONTACT_INFO_FLAG_PUSH,
     CONTACT_LIST_STATE_SUCCESS,
     HANDLE_TYPE_CONTACT,
     SUBSCRIPTION_STATE_YES,
@@ -23,6 +24,7 @@ from telepathy.interfaces import (
     CONNECTION_INTERFACE_ALIASING,
     CONNECTION_INTERFACE_AVATARS,
     CONNECTION_INTERFACE_CONTACT_GROUPS,
+    CONNECTION_INTERFACE_CONTACT_INFO,
     CONNECTION_INTERFACE_CONTACT_LIST,
     CONNECTION_INTERFACE_SIMPLE_PRESENCE,
 )
@@ -31,6 +33,7 @@ from telepathy.server import (
     ConnectionInterfaceAliasing,
     ConnectionInterfaceAvatars,
     ConnectionInterfaceContacts,
+    ConnectionInterfaceContactInfo,
     ConnectionInterfaceContactGroups,
     ConnectionInterfaceContactList,
     ConnectionInterfaceRequests,
@@ -54,6 +57,7 @@ class SkykitConnection(Connection,
     ConnectionInterfaceAliasing,
     ConnectionInterfaceAvatars,
     ConnectionInterfaceContactGroups,
+    ConnectionInterfaceContactInfo,
     ConnectionInterfaceContactList,
     ConnectionInterfaceContacts,
     ConnectionInterfaceRequests,
@@ -61,6 +65,11 @@ class SkykitConnection(Connection,
     ):
 
     _download_at_connection = False
+    _contact_info_flags = CONTACT_INFO_FLAG_PUSH
+    _supported_fields = [
+        ('fn', [], 0, 1),
+        ('tel', [], 0, 1),
+    ]
 
     def __init__(self, protocol, manager, parameters):
         protocol.check_parameters(parameters)
@@ -78,6 +87,7 @@ class SkykitConnection(Connection,
         ConnectionInterfaceAliasing.__init__(self)
         ConnectionInterfaceAvatars.__init__(self)
         ConnectionInterfaceContactGroups.__init__(self)
+        ConnectionInterfaceContactInfo.__init__(self)
         ConnectionInterfaceContactList.__init__(self)
         ConnectionInterfaceContacts.__init__(self)
         ConnectionInterfaceRequests.__init__(self)
@@ -166,7 +176,6 @@ class SkykitConnection(Connection,
 
         skypeContactGroup = self._skype.GetHardwiredContactGroup('ALL_KNOWN_CONTACTS')
         skypeContacts = skypeContactGroup.GetContacts()
-        print 'P', map(lambda c: [c.GetIdentity(), c.availability], skypeContacts)
 
         for skype_contact in skypeContacts:
             handle = self.ensure_handle(HANDLE_TYPE_CONTACT, skype_contact.GetIdentity())
@@ -185,6 +194,31 @@ class SkykitConnection(Connection,
                 ),
                 signature='uss',
             )
+
+            ATTRS = {
+                'fullname': 'fn',
+                'phone_mobile': 'tel',
+                'phone_home': 'tel',
+            }
+
+            array = []
+            items = {}
+            for prop, vcard_field in ATTRS.items():
+                value = getattr(skype_contact, prop, None)
+                if value:
+                    items[vcard_field] = value
+                    array.append(
+                        Struct(
+                            (
+                                vcard_field, Array([], signature='s'),
+                                Array([value], signature='s')
+                            ),
+                            signature='sasas'
+                        ),
+                    )
+            if array:
+                ret[int(handle)][CONNECTION_INTERFACE_CONTACT_INFO + '/info'] = Array(array)
+            print "P", skype_contact.GetIdentity(), skype_contact.availability, items
         return ret
 
     def OnMessage(self, message, changes_inbox_timestamp, supersedes_history_message, conversation):
