@@ -1,4 +1,6 @@
 import gobject
+import re
+
 from dbus.types import Array, Dictionary, String, UInt32, UInt64
 
 from telepathy.constants import CHANNEL_TEXT_MESSAGE_TYPE_NORMAL, HANDLE_TYPE_CONTACT
@@ -24,7 +26,7 @@ class SkykitTextChannel(ChannelTypeText, ChannelInterfaceMessages):
 
     def SendMessage(self, message, flags):
         skype_message = self._skype_conversation.PostText(message[1]['content'])
-        print "D [%s]", self._skype_conversation.identity, skype_message.guid.encode('hex'), skype_message.author, skype_message.timestamp, skype_message.body_xml
+        print "D [%s]" % self._skype_conversation.identity, skype_message.guid.encode('hex'), skype_message.author, skype_message.timestamp, skype_message.body_xml
         return skype_message.guid.encode('hex')
 
     def _message_sent(self, skype_message):
@@ -35,13 +37,13 @@ class SkykitTextChannel(ChannelTypeText, ChannelInterfaceMessages):
         }, signature='sv')
         body = Dictionary({
             String('content-type'): String('text/plain'),
-            String('content'): skype_message.body_xml,
+            String('content'): self.to_text(skype_message.body_xml),
         }, signature='sv')
         message = Array([headers, body], signature='a{sv}')
         self.MessageSent(message, 0, String(skype_message.guid.encode('hex')))
 
     def OnMessage(self, skype_message):
-        print "E [%s]", self._skype_conversation.identity, skype_message.guid.encode('hex'), skype_message.author, skype_message.timestamp, skype_message.body_xml
+        print "E [%s]" % self._skype_conversation.identity, skype_message.guid.encode('hex'), skype_message.author, skype_message.timestamp, skype_message.body_xml
         if skype_message.author == self._conn._skype_account.skypename:
             gobject.timeout_add(0, self._message_sent, skype_message)
         else:
@@ -60,7 +62,11 @@ class SkykitTextChannel(ChannelTypeText, ChannelInterfaceMessages):
             }, signature='sv')
         body = Dictionary({
             String('content-type'): String('text/plain'),
-            String('content'): String(skype_message.body_xml),
+            String('content'): String(self.to_text(skype_message.body_xml)),
         }, signature='sv')
         message = Array([header, body], signature='a{sv}')
         self.MessageReceived(message)
+
+    def to_text(self, s_xml):
+        s_xml = re.sub('<a href="(.*)">(.*)</a>', r'\1', s_xml)
+        return s_xml
