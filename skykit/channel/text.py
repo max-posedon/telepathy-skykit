@@ -22,7 +22,7 @@ class SkykitTextChannel(ChannelTypeText, ChannelInterfaceMessages):
 
         ChannelTypeText.__init__(self, conn, manager, props, object_path)
         ChannelInterfaceMessages.__init__(self)
-        self._skype_conversation = self._conn._skype.GetConversationByParticipants([handle.get_name()], True, True)
+        self._skype_conversation = self._conn._skype.GetConversationByIdentity(handle.get_name())
 
     def SendMessage(self, message, flags):
         skype_message = self._skype_conversation.PostText(message[1]['content'])
