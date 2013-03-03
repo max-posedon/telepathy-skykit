@@ -10,6 +10,7 @@ from telepathy.constants import (
     CONNECTION_STATUS_CONNECTED,
     CONNECTION_STATUS_CONNECTING,
     CONNECTION_STATUS_DISCONNECTED,
+    CONNECTION_STATUS_REASON_AUTHENTICATION_FAILED,
     CONNECTION_STATUS_REASON_REQUESTED,
     CONNECTION_STATUS_REASON_NONE_SPECIFIED,
     CONTACT_INFO_FLAG_PUSH,
@@ -152,6 +153,10 @@ class SkykitConnection(Connection,
             print ".", self._skype_account.commitstatus
         elif property_name == 'nr_of_other_instances':
             print ".", self._skype_account.nr_of_other_instances
+        elif property_name == 'logoutreason':
+            print ".", self._skype_account.logoutreason
+            if self._skype_account.logoutreason == 'INCORRECT_PASSWORD':
+                self.__disconnect_reason = CONNECTION_STATUS_REASON_AUTHENTICATION_FAILED
 
     def ContactOnPropertyChange(self, property_name):
         print "B", property_name
