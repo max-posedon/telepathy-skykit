@@ -12,3 +12,6 @@ class SkykitConnectionManager(ConnectionManager):
     def __init__(self, shutdown_func=None):
         ConnectionManager.__init__(self, PROGRAM)
         self._implement_protocol(PROTOCOL, SkykitProtocol)
+
+    def disconnected(self, conn):
+        ConnectionManager.disconnected(self, conn)

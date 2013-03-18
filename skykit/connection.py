@@ -5,13 +5,14 @@ import sys
 import weakref
 
 from telepathy.constants import (
-    CONNECTION_PRESENCE_TYPE_UNSET,
     CONNECTION_PRESENCE_STATUS_UNKNOWN,
+    CONNECTION_PRESENCE_TYPE_UNSET,
     CONNECTION_STATUS_CONNECTED,
     CONNECTION_STATUS_CONNECTING,
     CONNECTION_STATUS_DISCONNECTED,
     CONNECTION_STATUS_REASON_AUTHENTICATION_FAILED,
     CONNECTION_STATUS_REASON_REQUESTED,
+    CONNECTION_STATUS_REASON_NETWORK_ERROR,
     CONNECTION_STATUS_REASON_NONE_SPECIFIED,
     CONTACT_INFO_FLAG_PUSH,
     CONTACT_LIST_STATE_SUCCESS,
@@ -157,6 +158,8 @@ class SkykitConnection(Connection,
             print ".", self._skype_account.logoutreason
             if self._skype_account.logoutreason == 'INCORRECT_PASSWORD':
                 self.__disconnect_reason = CONNECTION_STATUS_REASON_AUTHENTICATION_FAILED
+            elif self._skype_account.logoutreason == 'INVALID_APP_ID':
+                self.__disconnect_reason = CONNECTION_STATUS_REASON_NETWORK_ERROR
 
     def ContactOnPropertyChange(self, property_name):
         print "B", property_name
@@ -171,10 +174,10 @@ class SkykitConnection(Connection,
         print "Q[out]", skype_contact.GetIdentity(), skype_contact.availability, skype_contact.mood_text
 
     def _disconnected(self):
-        self._groups = []
-
-        self.StatusChanged(CONNECTION_STATUS_DISCONNECTED, self.__disconnect_reason)
-        self._manager.disconnected(self)
+        if self._status != CONNECTION_STATUS_DISCONNECTED:
+            self._groups = []
+            self.StatusChanged(CONNECTION_STATUS_DISCONNECTED, self.__disconnect_reason)
+            self._manager.disconnected(self)
 
     def GetContactListAttributes(self, interfaces, hold):
         ret = Dictionary(signature='ua{sv}')
